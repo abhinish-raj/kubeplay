@@ -1,0 +1,46 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_prompt:
+    - name: "aws_access_key"
+      prompt: "Enter your AWS access key:"
+      private: yes
+    - name: "aws_secret_key"
+      prompt: "Enter your AWS secret key:"
+      private: yes
+  tasks:
+    # - name: Install AWS CLI
+    #   apt:
+    #     name: awscli
+    #     state: present
+    - name: Check if AWS CLI is installed
+      stat:
+        path: /usr/local/bin/aws
+      register: aws_cli
+
+    - name: Fail if AWS CLI is not installed
+      fail:
+        msg: "AWS CLI is not installed. Please install it before continuing."
+      when: not aws_cli.stat.exists
+
+    - name: Configure AWS CLI
+      command: aws configure set {{ item.key }} {{ item.value }} --profile k8s-cluster
+      with_items:
+        - { key: "aws_access_key_id", value: "{{ aws_access_key }}" }
+        - { key: "aws_secret_access_key", value: "{{ aws_secret_key }}" }
+        - { key: "region", value: "us-west-2" }
+
+    - name: Create Kubernetes cluster
+      shell: |
+        kops create cluster \
+        --name=k8s.example.com \
+        --state=s3://k8s-state-store \
+        --node-count=2 \
+        --node-size=t2.micro \
+        --master-size=t2.micro \
+        --zones=us-west-2a,us-west-2b \
+        --ssh-public-key=~/.ssh/id_rsa.pub \
+        --yes
+      environment:
+        AWS_PROFILE: k8s-cluster

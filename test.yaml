@@ -1,0 +1,39 @@
+- name: Apply new system settings
+  become: true
+  sysctl:
+    name: ""
+    state: present
+
+- name: Install containerd
+  become: true
+  apt:
+    name: containerd.io
+    update_cache: yes
+
+- name: Create default configuration file for containerd
+  become: true
+  file:
+    path: /etc/containerd/config.toml
+    state: touch
+    mode: '0644'
+
+- name: Generate default containerd configuration and save to file
+  become: true
+  shell: containerd config default | tee -a /etc/containerd/config.toml
+
+- name: Restart containerd
+  become: true
+  service:
+    name: containerd
+    state: restarted
+
+- name: Verify that containerd is running
+  become: true
+  systemd:
+    name: containerd
+    state: started
+    enabled: yes
+
+- name: Disable swap
+  become: true
+  command: swapoff -a
