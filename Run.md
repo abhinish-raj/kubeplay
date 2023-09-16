@@ -26,9 +26,9 @@ remote_user = cloud_user
 ask_pass = True
 ssh_connection = sshpass
 
-ssh cloud_user@44.203.142.115
-ssh cloud_user@34.238.125.12
-ssh cloud_user@54.163.119.186
+ssh cloud_user@3.80.44.76
+ssh cloud_user@54.85.31.169
+ssh cloud_user@34.228.22.148
 
 kubectl label nodes k8s-worker1 node-role.kubernetes.io/worker=""
 kubectl label nodes k8s-worker2 node-role.kubernetes.io/k8s-worker2=""

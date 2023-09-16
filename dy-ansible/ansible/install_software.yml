@@ -1,0 +1,12 @@
+---
+- name: Install Software on EC2 Instances
+  hosts: new_instances
+  become: yes
+  tasks:
+    - name: Update package cache and install software
+      apt:
+        name: 
+          - package1
+          - package2
+          # Add the list of software packages you want to install
+        update_cache: yes

@@ -1,0 +1,36 @@
+---
+- name: Execute Terraform
+  hosts: your_target_hosts
+  become: yes
+
+  tasks:
+    - name: Install unzip (if not already installed)
+      package:
+        name: unzip
+        state: present
+
+    - name: Download and extract Terraform
+      command: "curl -LO https://releases.hashicorp.com/terraform/0.15.4/terraform_0.15.4_linux_amd64.zip && unzip terraform_0.15.4_linux_amd64.zip"
+      args:
+        chdir: /usr/local/bin
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/bin"
+
+    - name: Check Terraform version
+      command: "terraform --version"
+      register: terraform_version_output
+
+    - name: Run Terraform init
+      command: "terraform init"
+      args:
+        chdir: /path/to/your/terraform/project
+
+    - name: Run Terraform plan
+      command: "terraform plan"
+      args:
+        chdir: /path/to/your/terraform/project
+
+    - name: Apply Terraform changes
+      command: "terraform apply -auto-approve"
+      args:
+        chdir: /path/to/your/terraform/project

@@ -3,7 +3,7 @@
   hosts: all
   become: true
   vars:
-    kube_version: "1.24.0-00"
+    kube_version: "1.27.0-00"
     cni_version: "0.9.1-00"
   tasks:
   - name: Add SSH key to authorized_keys
