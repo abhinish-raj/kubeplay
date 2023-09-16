@@ -1,0 +1,24 @@
+- name: Create and join Kubernetes worker nodes to the cluster
+  hosts: controlplane:worker
+  tasks:
+    - name: Create and print join token for worker nodes
+      shell: kubeadm token create --print-join-command
+      register: join_token
+      when: "'controlplane' in group_names"
+      become: true
+
+    - name: Display join command for worker nodes
+      debug:
+        var: join_token.stdout_lines[0]
+      when: "'controlplane' in group_names"
+    
+    - name: Set join_token fact for all hosts
+      set_fact:
+        join_token: "{{ join_token.stdout_lines[0] }}"
+      run_once: true
+
+    - name: Join Kubernetes worker nodes to the cluster
+      shell: "{{ hostvars[item]['join_token'] }}"
+      when: "'worker' in group_names and inventory_hostname == item"
+      become: true
+      loop: "{{ groups['worker'] }}"

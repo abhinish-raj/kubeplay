@@ -1,0 +1,191 @@
+---
+- name: Configure Kubernetes Control Plane and Worker Nodes
+  hosts: all
+  become: true
+  vars:
+    kube_version: "1.24.0-00"
+    cni_version: "0.9.1-00"
+  tasks:
+  - name: Add SSH key to authorized_keys
+    authorized_key:
+      user: cloud_user
+      key: "{{ lookup('file', '/Users/abhi/.ssh/id_rsa.pub') }}"
+  - name: Create containerd configuration file
+    copy:
+      content: |
+        overlay
+        br_netfilter
+      dest: /etc/modules-load.d/containerd.conf
+    become: true
+
+  - name: Load kernel modules
+    shell: sudo modprobe overlay && sudo modprobe br_netfilter
+    become: true
+
+  - name: Configure kernel networking settings for Kubernetes
+    copy:
+      content: |
+        net.bridge.bridge-nf-call-iptables = 1
+        net.ipv4.ip_forward = 1
+        net.bridge.bridge-nf-call-ip6tables = 1
+      dest: /etc/sysctl.d/99-kubernetes-cri.conf
+    become: true
+
+  - name: Apply new settings
+    sysctl:
+      name: "{{ item }}"
+      value: "1"
+      state: present
+      reload: yes
+    with_items:
+      - net.bridge.bridge-nf-call-iptables
+      - net.ipv4.ip_forward
+      - net.bridge.bridge-nf-call-ip6tables
+
+  - name: Install containerd
+    become: true
+    apt:
+      name: containerd.io
+      update_cache: yes
+
+  - name: Create default configuration file for containerd
+    become: true
+    file:
+      path: /etc/containerd/config.toml
+      state: touch
+      mode: '0644'
+
+  - name: Generate default containerd configuration and save to file
+    become: true
+    shell: |
+      if [ -f /etc/containerd/config.toml ]; then
+          containerd config default | tee /etc/containerd/config.toml
+      else
+          containerd config default | tee -a /etc/containerd/config.toml
+      fi
+
+  - name: Restart containerd
+    become: true
+    service:
+      name: containerd
+      state: restarted
+
+  - name: Verify that containerd is running
+    become: true
+    systemd:
+      name: containerd
+      state: started
+      enabled: yes
+
+  - name: Disable swap
+    become: true
+    command: swapoff -a
+
+  - name: Install required packages
+    apt:
+      name:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - gnupg-agent
+        - software-properties-common
+        - snapd
+      state: present
+      update-cache: true
+
+  - name: Add Kubernetes GPG key
+    apt_key:
+      url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      state: present
+
+  - name: Add Kubernetes repository
+    apt_repository:
+      repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+
+  - name: Install Kubernetes control plane components
+    apt:
+      name:
+        - kubelet={{ kube_version }}
+        - kubeadm={{ kube_version }}
+        - kubectl={{ kube_version }}
+      state: present
+
+  - name: Initialize Kubernetes control plane
+    command: sudo kubeadm init --pod-network-cidr 192.168.0.0/16 --kubernetes-version 1.24.0
+    register: kubeadm_init
+    when: inventory_hostname == groups['controlplane'][0]
+    become: true
+
+  # - name: Copy kubeconfig to user's home directory
+  #   copy:
+  #     src: /etc/kubernetes/admin.conf
+  #     dest: $HOME/.kube/config
+  #     remote_src: true
+  #   register: copy_kubeconfig
+  #   when: inventory_hostname == groups['controlplane'][0]
+  - name: Ensure .kube directory exists in root home directory
+    file:
+      path: $HOME/.kube
+      state: directory
+      mode: '0700'
+    become: true
+    become_user: root
+    when: inventory_hostname == groups['controlplane'][0]
+
+  - name: Copy kubeconfig to user's home directory
+    copy:
+      src: /etc/kubernetes/admin.conf
+      dest: $HOME/.kube/config
+      mode: '0600'
+      remote_src: true
+    become: true
+    become_user: root
+    register: copy_kubeconfig
+    when: inventory_hostname == groups['controlplane'][0]
+
+
+  - name: Install Calico CNI plugin
+    command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
+    when: copy_kubeconfig.changed
+    become: true
+
+  # - name: Join Kubernetes worker nodes to the cluster
+  #   command: "{{ kubeadm_init.stdout_lines[-2] }} --discovery-token-unsafe-skip-ca-verification"
+  #   when: "'worker' in group_names"
+  #   become: true
+
+  # - name: Install CNI plugins on worker nodes
+  #   become: true
+  #   # Update the version as needed
+  #   snap:
+  #     name: cni-plugins
+  #     channel: "v{{ cni_version }}"
+  #     classic: true
+
+  - name: Create and print join token for worker nodes
+    shell: kubeadm token create --print-join-command
+    register: join_token
+    when: "'controlplane' in group_names"
+    become: true
+
+  - name: Display join command for worker nodes
+    debug:
+      var: join_token.stdout_lines[0]
+    when: "'controlplane' in group_names"
+  
+  - name: Set join_token fact for all hosts
+    set_fact:
+      join_token: "{{ join_token.stdout_lines[0] }}"
+    run_once: true
+
+  - name: Join Kubernetes worker nodes to the cluster
+    shell: "{{ hostvars[item]['join_token'] }}"
+    when: "'worker' in group_names and inventory_hostname == item"
+    become: true
+    loop: "{{ groups['worker'] }}"
+
+  - name: Test kubectl command on control plane
+    shell: kubectl get nodes
+    when: "'controlplane' in group_names"
+    become: true
