@@ -1,0 +1,7 @@
+---
+- name: Master Playbook for EC2 and Software Installation
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - import_playbook: create_ec2.yml
+    - import_playbook: install_software.yml
