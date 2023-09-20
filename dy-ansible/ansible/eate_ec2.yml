@@ -13,7 +13,7 @@
         assign_public_ip: yes
         count: 1
         wait: yes
-      register: ec2
+      register: ec2file
 
     - name: Add new instance to dynamic inventory
       add_host:
